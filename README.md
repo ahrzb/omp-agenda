@@ -54,6 +54,8 @@ omp's editor only opens suggestion lists by itself for its own trigger character
 
 ## Commands
 
+Typing `/agenda ` lists the subcommands (`focus`, `history`, `clear`; only `history` when no agenda is pinned). After `focus ` it lists the items, current one first, filtered as you type the id.
+
 - `/agenda`: full-screen view
 - `/agenda focus <id>`: change the current topic
 - `/agenda history`: list every agenda on this branch (title, topic count, progress, last change; the pinned one marked) and pin an earlier one again. Nothing is lost when the agent `set`s a new agenda or clears one. Restoring saves a new version, so it can be undone the same way, and the restored agenda keeps its place in the list instead of appearing twice. Agendas are told apart by the time `set` created them; ones saved by older versions of the extension are split where the title changes or the agenda was cleared.

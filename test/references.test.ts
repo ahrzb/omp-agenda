@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { AutocompleteProvider } from "@oh-my-pi/pi-tui";
 import { applyOps } from "../src/model.ts";
-import { referenceProvider, referenceSuggestions } from "../src/references.ts";
+import { commandArgumentCompletions, referenceProvider, referenceSuggestions } from "../src/references.ts";
 
 const agenda = applyOps(undefined, [
 	{
@@ -47,4 +47,16 @@ test("picking an item replaces the typed prefix and absorbs a closing bracket", 
 	expect(provider.applyCompletion(["see [2] now"], 0, 6, item, "[2").lines).toEqual(["see [2.1] now"]);
 	// Anything that is not an agenda reference goes to the wrapped provider.
 	expect(provider.applyCompletion(["@src"], 0, 4, { value: "@src/", label: "src/" }, "@src").lines).toEqual(["fallback"]);
+});
+
+test("/agenda completes subcommands, then item ids after focus", () => {
+	const values = (text: string, withAgenda = true) =>
+		commandArgumentCompletions(withAgenda ? agenda : undefined, text)?.map(item => item.value) ?? null;
+	expect(values("")).toEqual(["focus ", "history", "clear"]);
+	expect(values("h")).toEqual(["history"]);
+	// Without an agenda only history makes sense.
+	expect(values("", false)).toEqual(["history"]);
+	expect(values("focus ")).toEqual(["focus 2.2", "focus 2", "focus 2.1", "focus 3", "focus 1"]);
+	expect(values("focus 2.")).toEqual(["focus 2.2", "focus 2.1"]);
+	expect(values("clear x")).toBeNull();
 });

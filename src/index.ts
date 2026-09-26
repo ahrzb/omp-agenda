@@ -20,7 +20,7 @@ import {
 	PARTIAL_MAX_LINES,
 } from "./view.ts";
 import { agendaHistory, type SavedState } from "./history.ts";
-import { autoOpenOnBracket, referenceProvider } from "./references.ts";
+import { autoOpenOnBracket, commandArgumentCompletions, referenceProvider } from "./references.ts";
 
 const ENTRY_TYPE = "omp-agenda.state";
 const WIDGET_KEY = "omp-agenda";
@@ -174,6 +174,7 @@ export default function agendaExtension(pi: ExtensionAPI): void {
 
 	pi.registerCommand("agenda", {
 		description: "Show the agenda full screen; `/agenda focus <id>`, `/agenda history`, `/agenda clear`",
+		getArgumentCompletions: prefix => commandArgumentCompletions(agenda, prefix),
 		handler: async (args, ctx) => {
 			const [command, ...rest] = args.trim().split(/\s+/);
 			if (!command) return openViewer(ctx);

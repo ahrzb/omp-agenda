@@ -8,17 +8,10 @@ const REFERENCE_PREFIX = /(?:^|[\s(])(\[[\d.]*)$/;
 const GLYPH: Record<Item["status"], string> = { open: "○", decided: "●", parked: "◌", dropped: "✕" };
 
 /**
- * Picker items for a partially typed `[id` reference: ids starting with what was typed. The current
- * item comes first (so it is preselected), then open and parked items, then closed ones, each in
- * document order.
+ * Items whose id starts with `typed`: the current item first (so it is preselected), then open and
+ * parked items, then closed ones, each in document order.
  */
-export function referenceSuggestions(
-	agenda: Agenda,
-	textBeforeCursor: string,
-): { items: AutocompleteItem[]; prefix: string } | null {
-	const prefix = REFERENCE_PREFIX.exec(textBeforeCursor)?.[1];
-	if (prefix === undefined) return null;
-	const typed = prefix.slice(1);
+function matchingItems(agenda: Agenda, typed: string): Item[] {
 	const all: Item[] = [];
 	const walk = (items: readonly Item[]) => {
 		for (const item of items) {
@@ -28,17 +21,57 @@ export function referenceSuggestions(
 	};
 	walk(agenda.items);
 	const rank = (item: Item) => (item.id === agenda.focus ? 0 : isClosed(item) ? 2 : 1);
-	const matches = all.filter(item => item.id.startsWith(typed)).sort((a, b) => rank(a) - rank(b));
-	if (matches.length === 0) return null;
+	return all.filter(item => item.id.startsWith(typed)).sort((a, b) => rank(a) - rank(b));
+}
+
+function itemChoice(agenda: Agenda, item: Item, value: string): AutocompleteItem {
 	return {
-		prefix,
-		items: matches.map(item => ({
-			value: `[${item.id}]`,
-			label: `[${item.id}] ${item.title}`,
-			icon: GLYPH[item.status],
-			description: item.id === agenda.focus ? "current" : (item.decision ?? item.status),
-		})),
+		value,
+		label: `[${item.id}] ${item.title}`,
+		icon: GLYPH[item.status],
+		description: item.id === agenda.focus ? "current" : (item.decision ?? item.status),
 	};
+}
+
+/** Picker items for a partially typed `[id` reference at the end of `textBeforeCursor`. */
+export function referenceSuggestions(
+	agenda: Agenda,
+	textBeforeCursor: string,
+): { items: AutocompleteItem[]; prefix: string } | null {
+	const prefix = REFERENCE_PREFIX.exec(textBeforeCursor)?.[1];
+	if (prefix === undefined) return null;
+	const matches = matchingItems(agenda, prefix.slice(1));
+	if (matches.length === 0) return null;
+	return { prefix, items: matches.map(item => itemChoice(agenda, item, `[${item.id}]`)) };
+}
+
+const SUBCOMMANDS = [
+	{ name: "focus", description: "change the current topic", needsAgenda: true },
+	{ name: "history", description: "pin an earlier agenda again", needsAgenda: false },
+	{ name: "clear", description: "drop the agenda", needsAgenda: true },
+] as const;
+
+/**
+ * Completions for everything typed after `/agenda `: the subcommands, then item ids after `focus `.
+ * Values replace the whole argument text.
+ */
+export function commandArgumentCompletions(agenda: Agenda | undefined, argumentText: string): AutocompleteItem[] | null {
+	const focus = /^focus\s+(\S*)$/.exec(argumentText);
+	if (focus) {
+		if (!agenda) return null;
+		const items = matchingItems(agenda, focus[1]!).map(item => itemChoice(agenda, item, `focus ${item.id}`));
+		return items.length > 0 ? items : null;
+	}
+	if (/\s/.test(argumentText)) return null;
+	const items = SUBCOMMANDS.filter(command => command.name.startsWith(argumentText) && (agenda || !command.needsAgenda)).map(
+		command => ({
+			// `focus` keeps a trailing space so the id list follows straight away.
+			value: command.name === "focus" ? "focus " : command.name,
+			label: command.name,
+			description: command.description,
+		}),
+	);
+	return items.length > 0 ? items : null;
 }
 
 /**
