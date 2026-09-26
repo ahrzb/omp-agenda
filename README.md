@@ -1,16 +1,34 @@
 # omp-agenda
 
-An [omp](https://github.com/can1357/oh-my-pi) extension that pins a discussion **agenda** to the bottom of the screen, just above the prompt where the todo list lives, and keeps it in the agent's context.
+**Keep track of where a long discussion with your agent actually is.**
 
-An agenda is the list of things being decided. Each topic can have sub-items, a status (`open`, `decided`, `parked`, `dropped`), a one-line decision, and markdown **details** (text, tables, mermaid diagrams).
+Some sessions turn into a long run of questions: a `/skill:grill-with-docs` interview, a design review, a trade-off with several moving parts. Every answer opens new questions, topics branch into sub-topics of sub-topics, and a few screens later the hard part is remembering what the topic even was. Scrolling back to find out breaks the flow of the conversation.
+
+omp-agenda is an [omp](https://github.com/can1357/oh-my-pi) extension that gives the discussion a map. Ask the agent to pin an agenda, and it keeps one just above your prompt: what is being decided, which topic you are on right now, and what is already settled. It stays on screen while you chat, and it is in the agent's context too, so you and the agent work from the same list.
+
+[![A grilling session with the agenda pinned above the prompt](demo/demo.gif)](https://asciinema.org/a/yeaH4cx1y2eTnleY)
+
+That is a real session with Claude Sonnet, not a mock-up. [Play it on asciinema.org](https://asciinema.org/a/yeaH4cx1y2eTnleY) to pause, scrub and copy text, or replay it in your terminal with `asciinema play demo/demo.cast`.
+
+## Quick start
+
+```sh
+omp plugin install github:ahrzb/omp-agenda
+```
+
+Then, in any discussion, ask for it: *"pin an agenda for this"*. The agent never starts one on its own.
+
+- `alt+g` expands the pinned line to the current topic's main points.
+- `alt+shift+g` opens the whole agenda full screen; `d` there lists just the decisions.
+- Type `[` in the prompt to refer to an item, like `[2.1]`.
+
+## What's in an agenda
+
+An agenda is the list of things being decided. Each topic can have sub-items, a status (`open`, `decided`, `parked`, `dropped`), a one-line decision, and markdown **details** (text, tables, mermaid diagrams, code).
 
 Details have a partial and a full form. The agent writes the main points first, then a line containing only `<!-- more -->`, then the bulky parts. The expanded pinned view shows what is above that line, capped automatically at 8 rendered lines (cut at the last paragraph or table boundary that fits). The full-screen view shows everything, without the break line.
 
 Code fences get omp's syntax highlighting when they name a language (```` ```ts ````, ```` ```sql ````); the tool description asks the agent to always tag them. Untagged fences, or languages the highlighter doesn't know, are drawn in the theme's code-block color so they still stand apart from prose.
-
-```
-▌  Agenda  Auth rework  ●1 ○2 ◌3  Token refresh strategy › 2.2 Revocation list          1/3 · alt+g ▾
-```
 
 ## Views
 
@@ -75,18 +93,21 @@ OMP_AGENDA_EXPAND_KEY=alt+j OMP_AGENDA_FULLSCREEN_KEY=alt+shift+j omp
 
 Environment variables rather than an omp `--flag`, because omp applies flag values after extensions have registered their shortcuts. Keys omp reserves (`ctrl+c`, `ctrl+t`, `alt+m`, …) are ignored by omp.
 
-## Install
-
-```sh
-omp plugin link .          # from this directory
-# or, for one run:
-omp -e ./src/index.ts
-```
-
 ## Development
 
 ```sh
 bun install
-bun run check   # tsc against the omp packages' types
+bun run check        # tsc against the omp packages' types
 bun test
+omp plugin link .    # use this checkout instead of the installed copy
+omp -e ./src/index.ts  # or load it for one run
 ```
+
+To re-record the demo after a UI change (Linux or WSL, with omp logged in to Anthropic, and `asciinema` 3 and `agg` on PATH):
+
+```sh
+python3 demo/record.py
+agg --idle-time-limit 3 demo/demo.cast demo/demo.gif
+```
+
+The model's replies are live, so each take differs; re-run until it reads well. agg needs a monospace font it can find (JetBrains Mono, or any in its default list); if none is installed, point it at one with `--font-dir`.

@@ -402,8 +402,10 @@ export class AgendaViewer implements Component {
 			if (text === undefined) body.push("");
 			else if (line !== cursorLine) body.push(`  ${text}`);
 			else {
-				const row = truncateToWidth(`${theme.fg("accent", "›")} ${text}`, width);
-				body.push(theme.bg("selectedBg", row + " ".repeat(Math.max(0, width - visibleWidth(row)))));
+				// Plain text on the selection background: accent/status colors on it can be unreadable
+				// (the current topic's accent title on a blue selection, for one).
+				const row = truncateToWidth(`› ${Bun.stripANSI(text)}`, width);
+				body.push(theme.bg("selectedBg", theme.fg("text", row + " ".repeat(Math.max(0, width - visibleWidth(row))))));
 			}
 		}
 		const position = maxScroll === 0 ? "all" : `${Math.round((this.#scroll / maxScroll) * 100)}%`;

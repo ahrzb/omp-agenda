@@ -1,0 +1,7 @@
+# Config overlay for recording the demo: no update/changelog/startup chatter in the frame.
+startup:
+  quiet: true
+  checkUpdate: false
+  changelogMode: hidden
+# Plain unicode symbols: the GIF renderer and asciinema.org's player have no Nerd Font glyphs.
+symbolPreset: unicode
