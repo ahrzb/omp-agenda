@@ -1,0 +1,20 @@
+{
+  "name": "omp-agenda",
+  "version": "0.1.0",
+  "description": "omp extension: a pinned agenda of decisions under discussion, kept in the agent's context",
+  "type": "module",
+  "private": true,
+  "omp": {
+    "extensions": ["./src/index.ts"]
+  },
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@oh-my-pi/pi-coding-agent": "18.3.0",
+    "@oh-my-pi/pi-tui": "18.3.0",
+    "@types/bun": "latest",
+    "typescript": "^5.9.0"
+  }
+}
