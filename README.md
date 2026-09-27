@@ -13,7 +13,7 @@ That is a real session with Claude Sonnet, not a mock-up. [Play it on asciinema.
 ## Quick start
 
 ```sh
-omp plugin install github:ahrzb/omp-agenda
+omp plugin install @ahrzb/omp-agenda
 ```
 
 Then, in any discussion, ask for it: *"pin an agenda for this"*. The agent never starts one on its own.
@@ -122,4 +122,4 @@ git tag v0.2.0
 git push origin main v0.2.0
 ```
 
-The workflow authenticates with npm [trusted publishing](https://docs.npmjs.com/trusted-publishers/), so there is no npm token in the repository. npm only lets you configure that on a package that already exists, so the very first version is published by hand (`pnpm publish --access public`). Then, on npmjs.com under the package's Settings → Trusted publishing, add GitHub Actions with user `ahrzb`, repository `omp-agenda`, workflow `publish.yml`, and allow `npm publish` (new trusted publishers only allow staged publishing by default).
+The workflow authenticates with npm [trusted publishing](https://docs.npmjs.com/trusted-publishers/), so there is no npm token in the repository. npm only lets you configure that on a package that already exists, so the very first version is published by hand (`pnpm publish`). Then, on npmjs.com under the package's Settings → Trusted publishing, add GitHub Actions with user `ahrzb`, repository `omp-agenda`, workflow `publish.yml`, and allow `npm publish` (new trusted publishers only allow staged publishing by default).
