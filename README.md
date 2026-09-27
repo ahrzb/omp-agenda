@@ -8,8 +8,6 @@ omp-agenda is an [omp](https://github.com/can1357/oh-my-pi) extension that gives
 
 [![A grilling session with the agenda pinned above the prompt](demo/demo.gif)](https://asciinema.org/a/yeaH4cx1y2eTnleY)
 
-That is a real session with Claude Sonnet, not a mock-up. [Play it on asciinema.org](https://asciinema.org/a/yeaH4cx1y2eTnleY) to pause, scrub and copy text, or replay it in your terminal with `asciinema play demo/demo.cast`.
-
 ## Quick start
 
 ```sh

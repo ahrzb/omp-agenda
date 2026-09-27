@@ -1,18 +1,27 @@
 {
   "name": "omp-agenda",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "omp extension: a pinned agenda of decisions under discussion, kept in the agent's context",
   "type": "module",
-  "keywords": ["omp", "oh-my-pi", "omp-plugin", "agenda"],
+  "keywords": [
+    "omp",
+    "oh-my-pi",
+    "omp-plugin",
+    "agenda"
+  ],
   "homepage": "https://github.com/ahrzb/omp-agenda#readme",
   "bugs": "https://github.com/ahrzb/omp-agenda/issues",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/ahrzb/omp-agenda.git"
   },
-  "files": ["src"],
+  "files": [
+    "src"
+  ],
   "omp": {
-    "extensions": ["./src/index.ts"]
+    "extensions": [
+      "./src/index.ts"
+    ]
   },
   "scripts": {
     "check": "tsc --noEmit",
