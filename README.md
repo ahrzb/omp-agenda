@@ -111,3 +111,15 @@ agg --idle-time-limit 3 demo/demo.cast demo/demo.gif
 ```
 
 The model's replies are live, so each take differs; re-run until it reads well. agg needs a monospace font it can find (JetBrains Mono, or any in its default list); if none is installed, point it at one with `--font-dir`.
+
+### Releasing
+
+CI (`.github/workflows/ci.yml`) runs `check` and the tests on pushes to `main` and on pull requests. Pushing a `v*` tag runs them again and then publishes to npm with `pnpm publish --provenance` (`.github/workflows/publish.yml`); the tag must match the `version` in `package.json`.
+
+```sh
+# bump "version" in package.json, commit, then:
+git tag v0.2.0
+git push origin main v0.2.0
+```
+
+The workflow authenticates with npm [trusted publishing](https://docs.npmjs.com/trusted-publishers/), so there is no npm token in the repository. npm only lets you configure that on a package that already exists, so the very first version is published by hand (`pnpm publish --access public`). Then, on npmjs.com under the package's Settings → Trusted publishing, add GitHub Actions with user `ahrzb`, repository `omp-agenda`, workflow `publish.yml`, and allow `npm publish` (new trusted publishers only allow staged publishing by default).
