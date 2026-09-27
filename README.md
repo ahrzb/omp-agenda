@@ -13,7 +13,7 @@ That is a real session with Claude Sonnet, not a mock-up. [Play it on asciinema.
 ## Quick start
 
 ```sh
-omp plugin install github:ahrzb/omp-agenda
+omp plugin install omp-agenda
 ```
 
 Then, in any discussion, ask for it: *"pin an agenda for this"*. The agent never starts one on its own.
