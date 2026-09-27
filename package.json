@@ -1,5 +1,5 @@
 {
-  "name": "@ahrzb/omp-agenda",
+  "name": "omp-agenda",
   "version": "0.1.0",
   "description": "omp extension: a pinned agenda of decisions under discussion, kept in the agent's context",
   "type": "module",
@@ -11,9 +11,6 @@
     "url": "git+https://github.com/ahrzb/omp-agenda.git"
   },
   "files": ["src"],
-  "publishConfig": {
-    "access": "public"
-  },
   "omp": {
     "extensions": ["./src/index.ts"]
   },
