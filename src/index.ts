@@ -1,5 +1,4 @@
 import type { ExtensionAPI, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
-import { Container, Text, type TUI } from "@oh-my-pi/pi-tui";
 import {
 	type Agenda,
 	AgendaError,
@@ -14,13 +13,12 @@ import {
 import {
 	AgendaViewer,
 	AgendaWidget,
-	agendaMarkdownTheme,
 	EXPAND_KEY,
 	FULLSCREEN_KEY,
 	PARTIAL_MAX_LINES,
 } from "./view.ts";
 import { agendaHistory, type SavedState } from "./history.ts";
-import { autoOpenOnBracket, commandArgumentCompletions, referenceProvider } from "./references.ts";
+import { commandArgumentCompletions, referenceProvider } from "./references.ts";
 
 const ENTRY_TYPE = "omp-agenda.state";
 const WIDGET_KEY = "omp-agenda";
@@ -29,7 +27,7 @@ interface AgendaEntry {
 	agenda: Agenda | null;
 }
 
-const TOOL_DESCRIPTION = `Keep a discussion agenda pinned at the bottom of the user's screen. It exists to help the user follow and engage with a complex discussion: what is being decided, where the conversation is right now, and what has been settled. Topics can have sub-items, a status (${STATUSES.join(" | ")}), a one-line decision, and markdown \`details\` (text, tables, mermaid diagrams, code). Tag every code fence with its language (\`\`\`ts, \`\`\`sql, \`\`\`bash) so it gets syntax highlighting. The current agenda is included in your system prompt on every turn.
+const TOOL_DESCRIPTION = `Keep a discussion agenda pinned at the bottom of the user's screen. It exists to help the user follow and engage with a complex discussion: what is being decided, where the conversation is right now, and what has been settled. Topics can have sub-items, a status (${STATUSES.join(" | ")}), a one-line decision, and markdown \`details\` (text, tables, mermaid diagrams, code). Tag every code fence with its language (\`\`\`\`ts, \`\`\`\`sql, \`\`\`\`bash) so it gets syntax highlighting. The current agenda is included in your system prompt on every turn.
 
 When the user expands the pinned agenda they see only the start of the current topic's details, so write details in two parts: first the main points (2-4 lines of plain prose or bullets: the question, the options, your lean), then a line containing only \`${MORE_MARKER}\`, then everything bulky (tables, mermaid diagrams, long background). Below that line only appears in the full-screen view. Without the line, or if the part above it is long, the expanded view shows the first ${PARTIAL_MAX_LINES} rendered lines. Shape (for an unrelated topic): "Redis is faster to adopt; Postgres LISTEN avoids a new service.\\n- Lean: Postgres until load says otherwise\\n${MORE_MARKER}\\n| | Redis | Postgres |\\n|---|---|---|\\n…".
 
@@ -45,8 +43,6 @@ export default function agendaExtension(pi: ExtensionAPI): void {
 	const z = pi.zod;
 	let agenda: Agenda | undefined;
 	let expanded = false;
-	/** The TUI, captured when the widget mounts; used to open the reference picker after `[`. */
-	let tui: TUI | undefined;
 
 	const refresh = (ctx: ExtensionContext) => {
 		if (!ctx.hasUI) return;
@@ -56,19 +52,7 @@ export default function agendaExtension(pi: ExtensionAPI): void {
 		}
 		const snapshot = agenda;
 		const isExpanded = expanded;
-		ctx.ui.setWidget(
-			WIDGET_KEY,
-			(widgetTui, theme) => {
-				tui = widgetTui;
-				return new AgendaWidget(
-					snapshot,
-					isExpanded,
-					widgetTui,
-					theme,
-					agendaMarkdownTheme(pi.pi.getMarkdownTheme(), theme),
-				);
-			},
-		);
+		ctx.ui.setWidget(WIDGET_KEY, (ui, theme) => new AgendaWidget(snapshot, isExpanded, ui, theme));
 	};
 
 	const commit = (next: Agenda | undefined, ctx: ExtensionContext) => {
@@ -114,18 +98,10 @@ export default function agendaExtension(pi: ExtensionAPI): void {
 	};
 	let pickerRegistered = false;
 	pi.on("session_start", (event, ctx) => {
-		// `[`, `[2` or `[2.1` in the prompt gets a picker of agenda items: on Tab, and on its own after `[`.
+		// `[`, `[2` or `[2.1` in the prompt gets a picker of agenda items on Tab.
 		if (ctx.hasUI && ctx.mode === "tui" && !pickerRegistered) {
 			pickerRegistered = true;
 			ctx.ui.addAutocompleteProvider(referenceProvider(() => agenda));
-			ctx.ui.onTerminalInput(
-				autoOpenOnBracket({
-					hasAgenda: () => agenda !== undefined,
-					getEditorText: () => ctx.ui.getEditorText(),
-					// injectDebugInput feeds the same pipeline as stdin; it is the only public way to press a key.
-					sendKey: () => (tui && typeof tui.injectDebugInput === "function" ? data => tui?.injectDebugInput(data) : undefined),
-				}),
-			);
 		}
 		restore(event, ctx);
 	});
@@ -153,8 +129,7 @@ export default function agendaExtension(pi: ExtensionAPI): void {
 			return;
 		}
 		await ctx.ui.custom<void>(
-			(tui, theme, _keybindings, done) =>
-				new AgendaViewer(snapshot, tui, theme, agendaMarkdownTheme(pi.pi.getMarkdownTheme(), theme), () => done()),
+			(ui, theme, _keybindings, done) => new AgendaViewer(snapshot, ui, theme, () => done()),
 			{ overlay: true },
 		);
 	};
@@ -252,13 +227,12 @@ export default function agendaExtension(pi: ExtensionAPI): void {
 		renderCall(args: { ops?: Partial<Op>[] } | undefined, _options, theme) {
 			const ops = args?.ops ?? [];
 			const summary = ops.map(describeOp).join(theme.fg("dim", ", "));
-			return new Text(`${theme.fg("toolTitle", theme.bold("agenda"))} ${theme.fg("muted", summary)}`, 0, 0);
+			return `${theme.fg("toolTitle", theme.bold("agenda"))} ${theme.fg("muted", summary)}`;
 		},
 		renderResult(result, options, theme) {
 			const text = result.content.map(block => (block.type === "text" ? block.text : "")).join("\n");
-			if (result.isError) return new Text(theme.fg("error", text), 0, 0);
-			if (options.expanded) return new Text(theme.fg("toolOutput", text), 0, 0);
-			return new Container();
+			if (result.isError) return theme.fg("error", text);
+			return options.expanded ? theme.fg("toolOutput", text) : undefined;
 		},
 	});
 }

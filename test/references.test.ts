@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { AutocompleteProvider } from "@oh-my-pi/pi-tui";
+import type { AutocompleteProvider } from "@oh-my-pi/pi-coding-agent/autocomplete/autocomplete";
 import { applyOps } from "../src/model.ts";
 import { commandArgumentCompletions, referenceProvider, referenceSuggestions } from "../src/references.ts";
 
@@ -47,6 +47,25 @@ test("picking an item replaces the typed prefix and absorbs a closing bracket", 
 	expect(provider.applyCompletion(["see [2] now"], 0, 6, item, "[2").lines).toEqual(["see [2.1] now"]);
 	// Anything that is not an agenda reference goes to the wrapped provider.
 	expect(provider.applyCompletion(["@src"], 0, 4, { value: "@src/", label: "src/" }, "@src").lines).toEqual(["fallback"]);
+});
+
+test("an @ path token still reaches the wrapped provider's file completion, interim results included", async () => {
+	const suggestions = { items: [{ value: "src/", label: "src/" }], prefix: "@src/" };
+	const stub: AutocompleteProvider = {
+		getSuggestions: async (_lines, _line, _col, _signal, onPartial) => {
+			onPartial?.(suggestions);
+			return suggestions;
+		},
+		applyCompletion: () => ({ lines: [], cursorLine: 0, cursorCol: 0 }),
+		getForceFileSuggestions: async () => suggestions,
+		shouldTriggerFileCompletion: () => true,
+	};
+	const provider = referenceProvider(() => agenda)(stub);
+	const interim: unknown[] = [];
+	await provider.getSuggestions(["@src/"], 0, 5, undefined, found => interim.push(found));
+	expect(interim).toEqual([suggestions]);
+	expect(await provider.getForceFileSuggestions!(["@src/"], 0, 5)).toBe(suggestions);
+	expect(provider.shouldTriggerFileCompletion!(["@src/"], 0, 5)).toBe(true);
 });
 
 test("/agenda completes subcommands, then item ids after focus", () => {

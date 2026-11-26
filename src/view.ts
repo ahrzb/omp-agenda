@@ -1,14 +1,10 @@
-import type { Theme, ThemeColor } from "@oh-my-pi/pi-coding-agent";
-import type { Component, KeyId, MarkdownTheme, TUI } from "@oh-my-pi/pi-tui";
-import {
-	applyBackgroundToLine,
-	Markdown,
-	matchesKey,
-	replaceTabs,
-	truncateToWidth,
-	visibleWidth,
-	wrapTextWithAnsi,
-} from "@oh-my-pi/pi-tui";
+import type { ExtensionRows, ExtensionUiHost } from "@oh-my-pi/pi-coding-agent";
+import { canonicalKeyId, type KeyId } from "@oh-my-pi/pi-coding-agent";
+import { decodeInput } from "@oh-my-pi/pi-tui/driver/input/decoder";
+import { markdownLook, renderMarkdown } from "@oh-my-pi/pi-tui/text/markdown/index";
+import type { Theme } from "@oh-my-pi/pi-tui/theme/contract";
+import { bold } from "@oh-my-pi/pi-tui/theme/theme";
+import { replaceTabs, truncate, visibleWidth, wrap } from "@oh-my-pi/pi-tui/text/width";
 import {
 	type Agenda,
 	find,
@@ -33,18 +29,30 @@ export const FULLSCREEN_KEY = keyFromEnv("OMP_AGENDA_FULLSCREEN_KEY", "alt+shift
 export const MAX_CHIPS = 7;
 
 const GLYPH: Record<Status, string> = { open: "○", decided: "●", parked: "◌", dropped: "✕" };
-const COLOR: Record<Status, ThemeColor> = { open: "muted", decided: "success", parked: "warning", dropped: "dim" };
+const COLOR: Record<Status, string> = { open: "muted", decided: "success", parked: "warning", dropped: "dim" };
 /** Expanded widget never takes more than this share of the terminal. */
 const EXPANDED_MAX_ROWS_RATIO = 0.45;
 /** Automatic cap on an item's partial view (rendered lines) when the model's break line comes late or not at all. */
 export const PARTIAL_MAX_LINES = 8;
 
+/** Whether raw terminal input presses the chord `id`; releases never match. */
+function matches(data: string, id: KeyId): boolean {
+	const [event] = decodeInput(data);
+	return event?.type === "key" && event.key.kind !== "release" && event.key.id === canonicalKeyId(id);
+}
+
+/** Markdown rows under the host's look (its colorful palette and mermaid setting). */
+function renderMarkdownRows(text: string, width: number, theme: Theme): readonly string[] {
+	const look = markdownLook();
+	return renderMarkdown(text, Math.max(10, width), { theme, colorful: look.colorful, mermaid: look.mermaid });
+}
+
 /** One-line summary of an item: glyph, id, title, decision / status tag, sub-item progress. */
-function itemLine(item: Item, theme: Theme, focus: string | undefined, bold: boolean): string {
+function itemLine(item: Item, theme: Theme, focus: string | undefined, emphasized: boolean): string {
 	let title = item.title;
-	if (item.id === focus) title = theme.fg("accent", theme.bold(title));
+	if (item.id === focus) title = theme.fg("accent", bold(title));
 	else if (item.status === "dropped") title = theme.fg("dim", title);
-	else if (bold) title = theme.bold(title);
+	else if (emphasized) title = bold(title);
 	let line = `${theme.fg(COLOR[item.status], GLYPH[item.status])} ${theme.fg("dim", item.id)} ${title}`;
 	if (item.decision) line += theme.fg("dim", " → ") + theme.fg("success", item.decision);
 	if (item.status === "parked" || item.status === "dropped") line += theme.fg("dim", ` · ${item.status}`);
@@ -53,25 +61,6 @@ function itemLine(item: Item, theme: Theme, focus: string | undefined, bold: boo
 		line += theme.fg("dim", ` · ${closed}/${total}`);
 	}
 	return replaceTabs(line);
-}
-
-function renderMarkdown(text: string, width: number, md: MarkdownTheme): readonly string[] {
-	return new Markdown(text, 0, 0, md).render(Math.max(10, width));
-}
-
-/**
- * omp's markdown theme, with one change: code the highlighter leaves uncolored (untagged fences, or a
- * language it doesn't know) gets the theme's code-block color instead of reading like prose.
- */
-export function agendaMarkdownTheme(md: MarkdownTheme, theme: Theme): MarkdownTheme {
-	return {
-		...md,
-		highlightCode: (code, lang) => {
-			const lines = md.highlightCode?.(code, lang) ?? code.split("\n");
-			if (lines.some(line => line.includes("\x1b["))) return lines;
-			return lines.map(line => theme.fg("mdCodeBlock", line));
-		},
-	};
 }
 
 /**
@@ -98,7 +87,7 @@ function headerLine(agenda: Agenda, theme: Theme, width: number, expanded: boole
 		.map(item => {
 			const glyph = theme.fg(COLOR[item.status], GLYPH[item.status]);
 			if (item !== focusTop) return glyph + theme.fg("dim", item.id);
-			let chip = glyph + theme.fg("accent", theme.bold(item.id));
+			let chip = glyph + theme.fg("accent", bold(item.id));
 			// Sub-items' statuses; the one on the focus path is in the accent color.
 			if (item.items.length > 0) {
 				const dots = item.items.map(child => {
@@ -126,13 +115,13 @@ function headerLine(agenda: Agenda, theme: Theme, width: number, expanded: boole
 	const { closed, total } = progress(agenda.items);
 	const right = theme.fg("dim", `${closed}/${total} · ${EXPAND_KEY} ${expanded ? "▴" : "▾"}`);
 	// A brighter chip than the band, so the widget is recognizable even on near-black status backgrounds.
-	const label = theme.bg("selectedBg", theme.fg("accent", theme.bold(" Agenda ")));
+	const label = theme.bg("selectedBg", theme.fg("accent", bold(" Agenda ")));
 	const candidates = [`${label} ${theme.fg("muted", agenda.title)}  ${chips}`, `${label} ${chips}`];
 	const room = width - visibleWidth(right) - 2;
 	const left = candidates.find(candidate => visibleWidth(candidate) <= room);
 	if (left) return left + " ".repeat(width - visibleWidth(left) - visibleWidth(right)) + right;
-	if (room >= 12) return `${truncateToWidth(candidates[1]!, room)}  ${right}`;
-	return truncateToWidth(candidates[1]!, width);
+	if (room >= 12) return `${truncate(candidates[1]!, room)}  ${right}`;
+	return truncate(candidates[1]!, width);
 }
 
 /** Trailing marker on a heading whose content (details or sub-items) the current view hides. */
@@ -144,10 +133,10 @@ function hiddenMark(theme: Theme): string {
  * The partial view of an item's details: the text above the model's `<!-- more -->` line, capped at
  * PARTIAL_MAX_LINES rendered lines. The cap prefers the last paragraph/table boundary before the limit.
  */
-function partialLines(item: Item, md: MarkdownTheme, prefix: string, width: number): { lines: string[]; cut: boolean } {
+function partialLines(item: Item, theme: Theme, prefix: string, width: number): { lines: string[]; cut: boolean } {
 	if (!item.details) return { lines: [], cut: false };
 	const { partial, marked } = splitDetails(item.details);
-	let rendered = partial ? [...renderMarkdown(partial, width - visibleWidth(prefix), md)] : [];
+	let rendered = partial ? [...renderMarkdownRows(partial, width - visibleWidth(prefix), theme)] : [];
 	while (rendered.length > 0 && !rendered.at(-1)!.trim()) rendered.pop();
 	let cut = marked;
 	if (rendered.length > PARTIAL_MAX_LINES) {
@@ -165,25 +154,25 @@ function partialLines(item: Item, md: MarkdownTheme, prefix: string, width: numb
 function subTree(
 	items: readonly Item[],
 	theme: Theme,
-	md: MarkdownTheme,
 	focus: string | undefined,
 	prefix: string,
 	width: number,
 	hid: { found: boolean },
 ): string[] {
+	const tree = theme.symbols;
 	const lines: string[] = [];
 	items.forEach((child, index) => {
 		const last = index === items.length - 1;
-		const branch = theme.fg("dim", `${last ? theme.tree.last : theme.tree.branch} `);
+		const branch = theme.fg("dim", `${last ? tree.symbol("tree.last") : tree.symbol("tree.branch")} `);
 		const open = focus !== undefined && isWithin(focus, child.id);
-		const inner = prefix + (last ? "   " : theme.fg("dim", `${theme.tree.vertical}  `));
-		const partial = open ? partialLines(child, md, inner, width) : undefined;
+		const inner = prefix + (last ? "   " : theme.fg("dim", `${tree.symbol("tree.vertical")}  `));
+		const partial = open ? partialLines(child, theme, inner, width) : undefined;
 		const hidden = partial ? partial.cut : !!child.details || child.items.length > 0;
 		if (hidden) hid.found = true;
 		lines.push(`${prefix}${branch}${itemLine(child, theme, focus, false)}${hidden ? hiddenMark(theme) : ""}`);
 		if (!partial) return;
 		lines.push(...partial.lines);
-		lines.push(...subTree(child.items, theme, md, focus, inner, width, hid));
+		lines.push(...subTree(child.items, theme, focus, inner, width, hid));
 	});
 	return lines;
 }
@@ -192,19 +181,18 @@ function subTree(
  * Sticky widget above the editor: one header row; expanded adds the current topic's partial view and sub-items.
  * Every row carries an accent bar and a background band so it reads as UI chrome, not transcript.
  */
-export class AgendaWidget implements Component {
+export class AgendaWidget implements ExtensionRows {
 	#cache: { width: number; rows: number; lines: string[] } | undefined;
 
 	constructor(
 		private readonly agenda: Agenda,
 		private readonly expanded: boolean,
-		private readonly tui: TUI,
+		private readonly host: ExtensionUiHost,
 		private readonly theme: Theme,
-		private readonly md: MarkdownTheme,
 	) {}
 
 	render(width: number): readonly string[] {
-		const rows = this.tui.terminal.rows;
+		const rows = this.host.size().rows;
 		if (this.#cache?.width === width && this.#cache.rows === rows) return this.#cache.lines;
 		const { theme } = this;
 		// Bar + space on the left, one space of right margin.
@@ -221,16 +209,13 @@ export class AgendaWidget implements Component {
 			lines.push(...body);
 		}
 		const bar = theme.fg("accent", "▌");
-		const band = (text: string) => theme.bg("statusLineBg", text);
-		// applyBackgroundToLine survives bg-only resets; mermaid output also emits full resets.
-		const open = band("\x01").split("\x01")[0]!;
-		const out = lines.map(line =>
-			applyBackgroundToLine(
-				`${bar} ${truncateToWidth(line, inner)}`.replace(/\x1b\[0?m/g, reset => reset + open),
-				width,
-				band,
-			),
-		);
+		// Re-apply the band after the full resets mermaid output emits.
+		const open = theme.bg("statusLineBg", "\x01").split("\x01")[0]!;
+		const out = lines.map(line => {
+			const raw = `${bar} ${truncate(line, inner)}`;
+			const styled = raw.replace(/\x1b\[0?m/g, reset => reset + open);
+			return theme.bg("statusLineBg", styled + " ".repeat(Math.max(0, width - visibleWidth(raw))));
+		});
 		this.#cache = { width, rows, lines: out };
 		return out;
 	}
@@ -240,20 +225,20 @@ export class AgendaWidget implements Component {
 	}
 
 	#body(width: number): string[] {
-		const { agenda, theme, md } = this;
+		const { agenda, theme } = this;
 		if (agenda.items.length === 0) return [theme.fg("dim", "  (empty)")];
 		const hid = { found: false };
 		const lines: string[] = [];
 		if (agenda.focus === undefined) {
-			lines.push(...subTree(agenda.items, theme, md, undefined, " ", width, hid));
+			lines.push(...subTree(agenda.items, theme, undefined, " ", width, hid));
 		} else {
 			const { item, path } = find(agenda, agenda.focus);
 			const topic = path[0] ?? item;
-			const partial = partialLines(topic, md, "   ", width);
+			const partial = partialLines(topic, theme, "   ", width);
 			if (partial.cut) hid.found = true;
 			lines.push(` ${itemLine(topic, theme, agenda.focus, true)}${partial.cut ? hiddenMark(theme) : ""}`);
 			lines.push(...partial.lines);
-			lines.push(...subTree(topic.items, theme, md, agenda.focus, "   ", width, hid));
+			lines.push(...subTree(topic.items, theme, agenda.focus, "   ", width, hid));
 		}
 		if (hid.found) lines.push(`${hiddenMark(theme)} ${theme.fg("dim", `more in full view · ${FULLSCREEN_KEY}`)}`);
 		return lines;
@@ -280,7 +265,7 @@ function flatten(items: readonly Item[]): Item[] {
  * Shift+Tab cycles everything (overview → contents → show all), and the cursor moves
  * between headings. It opens on the current topic with everything else collapsed.
  */
-export class AgendaViewer implements Component {
+export class AgendaViewer implements ExtensionRows {
 	#scroll = 0;
 	#cursor: string | undefined;
 	/** Scroll the cursor heading into view on the next render. */
@@ -299,9 +284,8 @@ export class AgendaViewer implements Component {
 
 	constructor(
 		private readonly agenda: Agenda,
-		private readonly tui: TUI,
+		private readonly host: ExtensionUiHost,
 		private readonly theme: Theme,
-		private readonly md: MarkdownTheme,
 		private readonly close: () => void,
 	) {
 		this.#cursor = agenda.focus ?? agenda.items[0]?.id;
@@ -318,13 +302,13 @@ export class AgendaViewer implements Component {
 	}
 
 	handleInput(data: string): void {
-		if (matchesKey(data, "escape") || data === "q" || matchesKey(data, FULLSCREEN_KEY)) {
+		if (matches(data, "escape") || data === "q" || matches(data, FULLSCREEN_KEY)) {
 			this.close();
 			return;
 		}
 		if (data === "d") {
 			this.#decisionsPage = !this.#decisionsPage;
-			this.tui.requestRender();
+			this.host.requestRender();
 			return;
 		}
 		if (this.#decisionsPage) {
@@ -335,20 +319,20 @@ export class AgendaViewer implements Component {
 		const at = headings.findIndex(heading => heading.id === this.#cursor);
 		const located = this.#cursor === undefined ? undefined : find(this.agenda, this.#cursor);
 		const page = Math.max(1, this.#bodyHeight() - 1);
-		if (matchesKey(data, "tab")) {
+		if (matches(data, "tab")) {
 			if (located) this.#cycle(located.item);
-		} else if (matchesKey(data, "shift+tab")) this.#cycleAll();
-		else if (matchesKey(data, "down") || data === "j" || data === "n") this.#moveTo(headings[at + 1]?.id);
-		else if (matchesKey(data, "up") || data === "k" || data === "p") this.#moveTo(headings[at - 1]?.id);
+		} else if (matches(data, "shift+tab")) this.#cycleAll();
+		else if (matches(data, "down") || data === "j" || data === "n") this.#moveTo(headings[at + 1]?.id);
+		else if (matches(data, "up") || data === "k" || data === "p") this.#moveTo(headings[at - 1]?.id);
 		else if (data === "f") this.#moveTo(located?.siblings[located.index + 1]?.id);
 		else if (data === "b") this.#moveTo(located?.siblings[located.index - 1]?.id);
 		else if (data === "u") this.#moveTo(located?.path.at(-1)?.id);
-		else if (matchesKey(data, "home") || data === "g") this.#moveTo(headings[0]?.id);
-		else if (matchesKey(data, "end") || data === "G") this.#moveTo(headings.at(-1)?.id);
-		else if (matchesKey(data, "pageDown") || matchesKey(data, "space")) this.#page(page);
-		else if (matchesKey(data, "pageUp")) this.#page(-page);
+		else if (matches(data, "home") || data === "g") this.#moveTo(headings[0]?.id);
+		else if (matches(data, "end") || data === "G") this.#moveTo(headings.at(-1)?.id);
+		else if (matches(data, "pageDown") || matches(data, "space")) this.#page(page);
+		else if (matches(data, "pageUp")) this.#page(-page);
 		else return;
-		this.tui.requestRender();
+		this.host.requestRender();
 	}
 
 	render(width: number): readonly string[] {
@@ -387,7 +371,7 @@ export class AgendaViewer implements Component {
 		}
 
 		const { closed, total } = progress(this.agenda.items);
-		const title = `${theme.fg("accent", theme.bold("Agenda"))} ${theme.bold(this.agenda.title)}`;
+		const title = `${theme.fg("accent", bold("Agenda"))} ${bold(this.agenda.title)}`;
 		const legend = [
 			...STATUSES.map(status => `${theme.fg(COLOR[status], GLYPH[status])} ${theme.fg("dim", status)}`),
 			theme.fg("accent", "current"),
@@ -404,7 +388,7 @@ export class AgendaViewer implements Component {
 			else {
 				// Plain text on the selection background: accent/status colors on it can be unreadable
 				// (the current topic's accent title on a blue selection, for one).
-				const row = truncateToWidth(`› ${Bun.stripANSI(text)}`, width);
+				const row = truncate(`› ${Bun.stripANSI(text)}`, width);
 				body.push(theme.bg("selectedBg", theme.fg("text", row + " ".repeat(Math.max(0, width - visibleWidth(row))))));
 			}
 		}
@@ -418,7 +402,7 @@ export class AgendaViewer implements Component {
 			this.#contextRule(doc, width),
 			...body,
 			` ${footer}`,
-		].map(line => truncateToWidth(line, width));
+		].map(line => truncate(line, width));
 	}
 
 	invalidate(): void {
@@ -447,7 +431,7 @@ export class AgendaViewer implements Component {
 			if (item.decision) text += theme.fg("dim", " → ") + theme.fg("success", item.decision);
 			// Row = 2 margin + glyph + space + id + 2 spaces; continuation rows align with the title.
 			const indent = " ".repeat(2 + idWidth + 2);
-			const [first = "", ...rest] = wrapTextWithAnsi(replaceTabs(text), Math.max(10, width - 2 - indent.length));
+			const [first = "", ...rest] = wrap(replaceTabs(text), Math.max(10, width - 2 - indent.length));
 			return [`${theme.fg("success", GLYPH.decided)} ${theme.fg("dim", id)}  ${first}`, ...rest.map(line => indent + line)];
 		});
 		return { lines, count: decided.length };
@@ -455,14 +439,14 @@ export class AgendaViewer implements Component {
 
 	#scrollDecisions(data: string): void {
 		const page = Math.max(1, this.#bodyHeight() - 1);
-		if (matchesKey(data, "down") || data === "j" || data === "n") this.#decisionsScroll += 1;
-		else if (matchesKey(data, "up") || data === "k" || data === "p") this.#decisionsScroll -= 1;
-		else if (matchesKey(data, "pageDown") || matchesKey(data, "space")) this.#decisionsScroll += page;
-		else if (matchesKey(data, "pageUp")) this.#decisionsScroll -= page;
-		else if (matchesKey(data, "home") || data === "g") this.#decisionsScroll = 0;
-		else if (matchesKey(data, "end") || data === "G") this.#decisionsScroll = Number.MAX_SAFE_INTEGER;
+		if (matches(data, "down") || data === "j" || data === "n") this.#decisionsScroll += 1;
+		else if (matches(data, "up") || data === "k" || data === "p") this.#decisionsScroll -= 1;
+		else if (matches(data, "pageDown") || matches(data, "space")) this.#decisionsScroll += page;
+		else if (matches(data, "pageUp")) this.#decisionsScroll -= page;
+		else if (matches(data, "home") || data === "g") this.#decisionsScroll = 0;
+		else if (matches(data, "end") || data === "G") this.#decisionsScroll = Number.MAX_SAFE_INTEGER;
 		else return;
-		this.tui.requestRender();
+		this.host.requestRender();
 	}
 
 	#renderDecisions(width: number): readonly string[] {
@@ -471,7 +455,7 @@ export class AgendaViewer implements Component {
 		const height = this.#bodyHeight();
 		const maxScroll = Math.max(0, lines.length - height);
 		this.#decisionsScroll = Math.min(Math.max(0, this.#decisionsScroll), maxScroll);
-		const title = `${theme.fg("accent", theme.bold("Agenda"))} ${theme.bold(this.agenda.title)} ${theme.fg("muted", "· decisions")}`;
+		const title = `${theme.fg("accent", bold("Agenda"))} ${bold(this.agenda.title)} ${theme.fg("muted", "· decisions")}`;
 		const right = theme.fg("dim", `${count} decided`);
 		const gap = Math.max(1, width - 2 - visibleWidth(title) - visibleWidth(right));
 		const body = lines.slice(this.#decisionsScroll, this.#decisionsScroll + height).map(line => `  ${line}`);
@@ -483,11 +467,11 @@ export class AgendaViewer implements Component {
 			theme.fg("borderMuted", "─".repeat(width)),
 			...body,
 			` ${footer}`,
-		].map(line => truncateToWidth(line, width));
+		].map(line => truncate(line, width));
 	}
 
 	#bodyHeight(): number {
-		return Math.max(1, this.tui.terminal.rows - 3);
+		return Math.max(1, this.host.size().rows - 3);
 	}
 
 	/**
@@ -503,7 +487,7 @@ export class AgendaViewer implements Component {
 			crumb = top.line < this.#scroll ? [...path, item] : path;
 		}
 		if (crumb.length === 0) return theme.fg("borderMuted", "─".repeat(width));
-		const label = truncateToWidth(` ${crumb.map(item => `${item.id} ${item.title}`).join(" › ")} › `, width - 6);
+		const label = truncate(` ${crumb.map(item => `${item.id} ${item.title}`).join(" › ")} › `, width - 6);
 		const rest = Math.max(0, width - 2 - visibleWidth(label));
 		return theme.fg("borderMuted", "──") + theme.fg("muted", label) + theme.fg("borderMuted", "─".repeat(rest));
 	}
@@ -590,7 +574,7 @@ export class AgendaViewer implements Component {
 				lines.push(line);
 				if (!folded) {
 					if (text && !bodyHidden) {
-						for (const rendered of renderMarkdown(text, width - indent.length - 6, this.md)) {
+						for (const rendered of renderMarkdownRows(text, width - indent.length - 6, theme)) {
 							lines.push(`${indent}    ${rendered}`);
 						}
 					}

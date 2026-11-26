@@ -1,9 +1,15 @@
-import { beforeAll, describe, expect, test } from "bun:test";
-import { getMarkdownTheme, initThemeSync, theme } from "@oh-my-pi/pi-tui/theme";
+import { describe, expect, test } from "bun:test";
+import { currentTheme } from "@oh-my-pi/pi-tui/theme/runtime";
 import { applyOps } from "../src/model.ts";
-import { AgendaViewer, AgendaWidget, agendaMarkdownTheme } from "../src/view.ts";
+import { AgendaViewer, AgendaWidget } from "../src/view.ts";
 
-beforeAll(() => initThemeSync());
+const theme = currentTheme();
+/** What a view's host offers: the terminal size and a repaint request. */
+const host = (rows: number) => ({
+	size: () => ({ columns: 100, rows }),
+	requestRender() {},
+	suspend: async <R>(run: () => Promise<R>): Promise<R> => run(),
+});
 
 const TAB = "\t";
 const SHIFT_TAB = "\x1b[Z";
@@ -25,7 +31,7 @@ function open(focus: string, rows = 40) {
 		},
 		{ op: "focus", id: focus },
 	])!;
-	const viewer = new AgendaViewer(agenda, { terminal: { rows }, requestRender() {} } as never, theme, getMarkdownTheme(), () => {});
+	const viewer = new AgendaViewer(agenda, host(rows), theme, () => {});
 	const screen = () => viewer.render(80).map(line => Bun.stripANSI(line).trimEnd());
 	const body = () => screen().slice(2, -1).filter(Boolean);
 	const cursor = () => body().find(line => line.startsWith("›"));
@@ -138,8 +144,7 @@ test("collapsed line: closed topics hidden, current topic on a chip with its sub
 		},
 		{ op: "focus", id: "2.2" },
 	])!;
-	const tui = { terminal: { rows: 40 } } as never;
-	const raw = new AgendaWidget(agenda, false, tui, theme, getMarkdownTheme()).render(100)[0]!;
+	const raw = new AgendaWidget(agenda, false, host(40), theme).render(100)[0]!;
 	const line = Bun.stripANSI(raw);
 	expect(line).toMatch(/ ○2·●○  ◌3  Refresh › 2\.2 Revocation/);
 	expect(line).not.toMatch(/[●✕][14]/);
@@ -148,10 +153,9 @@ test("collapsed line: closed topics hidden, current topic on a chip with its sub
 });
 
 test("collapsed line says all done once nothing is open, and counts what is still parked", () => {
-	const tui = { terminal: { rows: 40 } } as never;
 	const line = (items: Parameters<typeof applyOps>[1][number]["items"]) =>
 		Bun.stripANSI(
-			new AgendaWidget(applyOps(undefined, [{ op: "set", title: "Auth", items }])!, false, tui, theme, getMarkdownTheme()).render(100)[0]!,
+			new AgendaWidget(applyOps(undefined, [{ op: "set", title: "Auth", items }])!, false, host(40), theme).render(100)[0]!,
 		);
 	expect(line([{ title: "A", status: "decided" }, { title: "B", status: "dropped" }])).toMatch(/Auth {2}✓ all done +2\/2/);
 	expect(line([{ title: "A", status: "decided" }, { title: "B", status: "parked" }])).toContain("✓ all done · 1 parked");
@@ -168,7 +172,6 @@ test("full screen: a folded heading containing the current item names it", () =>
 });
 
 describe("partial view: break line and line cap", () => {
-	const tui = { terminal: { rows: 60 }, requestRender() {} } as never;
 	const expanded = (details: string, rotation = "Rotation gist\n\n<!-- more -->\n\nRotation chart") => {
 		const agenda = applyOps(undefined, [
 			{
@@ -178,7 +181,7 @@ describe("partial view: break line and line cap", () => {
 			},
 			{ op: "focus", id: "1.1" },
 		])!;
-		return new AgendaWidget(agenda, true, tui, theme, getMarkdownTheme())
+		return new AgendaWidget(agenda, true, host(60), theme)
 			.render(100)
 			.slice(1)
 			.map(line => Bun.stripANSI(line).trim());
@@ -216,7 +219,7 @@ describe("partial view: break line and line cap", () => {
 		const agenda = applyOps(undefined, [
 			{ op: "set", title: "Auth", items: [{ title: "Refresh", details: "Refresh gist\n<!-- more -->\nRefresh table" }] },
 		])!;
-		const text = new AgendaViewer(agenda, tui, theme, getMarkdownTheme(), () => {})
+		const text = new AgendaViewer(agenda, host(60), theme, () => {})
 			.render(100)
 			.map(line => Bun.stripANSI(line))
 			.join("\n");
@@ -234,17 +237,14 @@ test("full screen marks folded headings that hide content, but not empty ones", 
 	expect(sso).not.toContain("…");
 });
 
-test("code blocks: tagged fences keep syntax colors, untagged ones get the code-block color", () => {
-	const md = agendaMarkdownTheme(getMarkdownTheme(), theme);
+test("code blocks: a tagged fence keeps its syntax colors", () => {
 	const agenda = applyOps(undefined, [
-		{ op: "set", title: "T", items: [{ title: "Code", details: "```ts\nconst delay = 1;\n```\n\n```\nplain output\n```" }] },
+		{ op: "set", title: "T", items: [{ title: "Code", details: "```ts\nconst delay = 1;\n```" }] },
 	])!;
-	const lines = new AgendaViewer(agenda, { terminal: { rows: 30 }, requestRender() {} } as never, theme, md, () => {}).render(80);
+	const lines = new AgendaViewer(agenda, host(30), theme, () => {}).render(80);
 	const ts = lines.find(line => line.includes("delay"))!;
-	const plain = lines.find(line => line.includes("plain output"))!;
 	// Several distinct foreground colors on the ts line: keyword, identifier, number.
 	expect(new Set(ts.match(/\x1b\[38;[0-9;]+m/g)).size).toBeGreaterThan(2);
-	expect(plain).toContain(theme.fg("mdCodeBlock", "plain output"));
 });
 
 test("d toggles a decisions-only page: decided items one line each, parked and dropped left out", () => {
@@ -260,7 +260,7 @@ test("d toggles a decisions-only page: decided items one line each, parked and d
 			],
 		},
 	])!;
-	const viewer = new AgendaViewer(agenda, { terminal: { rows: 20 }, requestRender() {} } as never, theme, getMarkdownTheme(), () => {});
+	const viewer = new AgendaViewer(agenda, host(20), theme, () => {});
 	const screen = () => viewer.render(80).map(line => Bun.stripANSI(line).trimEnd());
 	screen();
 	viewer.handleInput("d");
@@ -272,11 +272,10 @@ test("d toggles a decisions-only page: decided items one line each, parked and d
 });
 
 test("more than 7 open topics: the pinned line shows a window around the current one and counts the rest", () => {
-	const tui = { terminal: { rows: 40 } } as never;
 	const items = Array.from({ length: 12 }, (_, index) => ({ title: `T${index + 1}` }));
 	const line = (focus: string) => {
 		const agenda = applyOps(undefined, [{ op: "set", title: "Big", items }, { op: "focus", id: focus }])!;
-		return Bun.stripANSI(new AgendaWidget(agenda, false, tui, theme, getMarkdownTheme()).render(140)[0]!);
+		return Bun.stripANSI(new AgendaWidget(agenda, false, host(40), theme).render(140)[0]!);
 	};
 	expect(line("1")).toMatch(/ ○1  ○2 ○3 ○4 ○5 ○6 ○7 › \+5  T1 /);
 	expect(line("6")).toMatch(/\+2 ‹ ○3 ○4 ○5  ○6  ○7 ○8 ○9 › \+3  T6 /);

@@ -18,7 +18,7 @@ Then, in any discussion, ask for it: *"pin an agenda for this"*. The agent never
 
 - `alt+g` expands the pinned line to the current topic's main points.
 - `alt+shift+g` opens the whole agenda full screen; `d` there lists just the decisions.
-- Type `[` in the prompt to refer to an item, like `[2.1]`.
+- Type `[` and press `Tab` to refer to an item, like `[2.1]`.
 
 ## What's in an agenda
 
@@ -26,7 +26,7 @@ An agenda is the list of things being decided. Each topic can have sub-items, a 
 
 Details have a partial and a full form. The agent writes the main points first, then a line containing only `<!-- more -->`, then the bulky parts. The expanded pinned view shows what is above that line, capped automatically at 8 rendered lines (cut at the last paragraph or table boundary that fits). The full-screen view shows everything, without the break line.
 
-Code fences get omp's syntax highlighting when they name a language (```` ```ts ````, ```` ```sql ````); the tool description asks the agent to always tag them. Untagged fences, or languages the highlighter doesn't know, are drawn in the theme's code-block color so they still stand apart from prose.
+Code fences get omp's syntax highlighting when they name a language (```` ```ts ````, ```` ```sql ````); the tool description asks the agent to always tag them. Untagged fences, or languages the highlighter doesn't know, render as plain code.
 
 ## Views
 
@@ -64,9 +64,9 @@ Colors: `○ open` muted, `● decided` green (the decision text after `→` is 
 
 ## Referring to items
 
-Items are referred to in square brackets: `[2.1]`. While an agenda is pinned, typing `[` at the start of a word in the prompt opens a picker: the current item comes first, then open and parked items, then closed ones. Keep typing (`[2.`) to filter; `Enter` or `Tab` inserts `[2.1]`, `Esc` closes it. `Tab` after `[` or `[2` reopens it. A `[` inside a word (`arr[0]`) is left alone. The agent is told to write references the same way.
+Items are referred to in square brackets: `[2.1]`. While an agenda is pinned, `Tab` with a `[`, `[2` or `[2.1` token at the caret opens a picker: the current item comes first, then open and parked items, then closed ones. Keep typing (`[2.`) to filter; `Enter` or `Tab` inserts `[2.1]`, `Esc` closes it. A `[` inside a word (`arr[0]`) is left alone. The agent is told to write references the same way.
 
-omp's editor only opens suggestion lists by itself for its own trigger characters (`@`, `^`, `#`, `/`), so the extension opens this one by sending the editor a `Tab` right after the `[` lands, through the TUI's input-injection hook (`injectDebugInput`).
+omp's editor opens suggestion lists by itself only for its own trigger characters (`@`, `^`, `#`, `/`), so the agenda picker opens on `Tab`; omp no longer lets an extension inject keys into the editor.
 
 ## Commands
 
@@ -99,6 +99,8 @@ bun run check        # tsc against the omp packages' types
 bun test
 omp plugin link .    # use this checkout instead of the installed copy
 omp -e ./src/index.ts  # or load it for one run
+
+The extension is written against the reactive `@oh-my-pi/pi-tui` API and needs omp 19.2.1 or newer.
 ```
 
 To re-record the demo after a UI change (Linux or WSL, with omp logged in to Anthropic, and `asciinema` 3 and `agg` on PATH):
