@@ -1,5 +1,9 @@
 import type { AutocompleteProviderFactory } from "@oh-my-pi/pi-coding-agent";
-import type { AutocompleteItem, AutocompleteProvider } from "@oh-my-pi/pi-tui";
+import type {
+	AutocompleteItem,
+	AutocompleteProvider,
+	ModelMentionCompletion,
+} from "@oh-my-pi/pi-coding-agent/autocomplete/autocomplete";
 import { type Agenda, type Item, isClosed } from "./model.ts";
 
 /** An agenda reference being typed: `[`, `[2`, `[2.1` at the end of a token. */
@@ -75,8 +79,8 @@ export function commandArgumentCompletions(agenda: Agenda | undefined, argumentT
 }
 
 /**
- * Wraps the editor's provider so `[`, `[2` or `[2.1` gets a picker of agenda items (on Tab, and
- * automatically after `[` via `autoOpenOnBracket`). Everything else is delegated unchanged.
+ * Wraps the editor's provider so `[`, `[2` or `[2.1` gets a picker of agenda items (on Tab).
+ * Everything else is delegated unchanged.
  */
 export function referenceProvider(getAgenda: () => Agenda | undefined): AutocompleteProviderFactory {
 	return (current: AutocompleteProvider): AutocompleteProvider => {
@@ -85,8 +89,9 @@ export function referenceProvider(getAgenda: () => Agenda | undefined): Autocomp
 			return agenda ? referenceSuggestions(agenda, (lines[cursorLine] ?? "").slice(0, cursorCol)) : null;
 		};
 		const wrapped: AutocompleteProvider = {
-			getSuggestions: async (lines, cursorLine, cursorCol, signal) =>
-				(await ours(lines, cursorLine, cursorCol)) ?? current.getSuggestions(lines, cursorLine, cursorCol, signal),
+			getSuggestions: async (lines, cursorLine, cursorCol, signal, onPartial) =>
+				(await ours(lines, cursorLine, cursorCol)) ??
+				current.getSuggestions(lines, cursorLine, cursorCol, signal, onPartial),
 			getForceFileSuggestions: async (lines, cursorLine, cursorCol, signal) => {
 				const found = await ours(lines, cursorLine, cursorCol);
 				if (found) return found;
@@ -117,6 +122,16 @@ export function referenceProvider(getAgenda: () => Agenda | undefined): Autocomp
 		if (current.getInlineHint) wrapped.getInlineHint = current.getInlineHint.bind(current);
 		if (current.trySyncSlashCompletion) wrapped.trySyncSlashCompletion = current.trySyncSlashCompletion.bind(current);
 		if (current.trySyncInlineReplace) wrapped.trySyncInlineReplace = current.trySyncInlineReplace.bind(current);
+		if (current.trySyncModelMentionCompletion) {
+			wrapped.trySyncModelMentionCompletion = (lines, cursorLine, cursorCol): ModelMentionCompletion => {
+				const agenda = getAgenda();
+				if (!agenda || !BRACKET_TOKEN.test((lines[cursorLine] ?? "").slice(0, cursorCol))) {
+					return current.trySyncModelMentionCompletion!(lines, cursorLine, cursorCol);
+				}
+				// A `[…` token is ours: it must not fall through to the model-mention list.
+				return { kind: "unhandled" };
+			};
+		}
 		if (current.shouldTriggerFileCompletion) {
 			const should = current.shouldTriggerFileCompletion.bind(current);
 			wrapped.shouldTriggerFileCompletion = (lines, cursorLine, cursorCol) =>
@@ -128,32 +143,3 @@ export function referenceProvider(getAgenda: () => Agenda | undefined): Autocomp
 
 /** A token that starts with `[` at the end of the text before the cursor. */
 const BRACKET_TOKEN = /(?:^|[\s(])\[\S*$/;
-
-/**
- * The editor opens suggestion lists by itself only for its own trigger characters. This listens for
- * a typed `[`, and when it landed at the start of a word in the prompt, sends the editor a Tab so the
- * reference picker opens as if the user had pressed it. Returns the terminal-input handler.
- */
-export function autoOpenOnBracket(options: {
-	hasAgenda: () => boolean;
-	getEditorText: () => string;
-	/** Feeds keys through the normal input pipeline; undefined until the TUI is known. */
-	sendKey: () => ((data: string) => void) | undefined;
-}): (data: string) => undefined {
-	return data => {
-		if (data !== "[" || !options.hasAgenda()) return;
-		const send = options.sendKey();
-		if (!send) return;
-		const before = options.getEditorText();
-		// The editor handles the key right after the listeners; check what it did afterwards.
-		queueMicrotask(() => {
-			const after = options.getEditorText();
-			// Exactly one `[` inserted means the prompt had focus (not an overlay or dialog).
-			if (after.length !== before.length + 1) return;
-			let at = 0;
-			while (at < before.length && before[at] === after[at]) at++;
-			if (after[at] !== "[" || !BRACKET_TOKEN.test(after.slice(0, at + 1))) return;
-			send("\t");
-		});
-	};
-}
